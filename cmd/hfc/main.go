@@ -34,18 +34,18 @@ func init() {
 	rootCmd.AddCommand(downloadCmd)
 	rootCmd.AddCommand(versionCmd)
 
-	// Download command flags
+	// Download command flags - matching Python huggingface-cli
 	downloadCmd.Flags().StringVar(&downloadOpts.repoType, "repo-type", "model", "The type of repository (model, dataset, or space)")
 	downloadCmd.Flags().StringVar(&downloadOpts.revision, "revision", "", "Git revision id which can be a branch name, a tag, or a commit hash")
 	downloadCmd.Flags().StringSliceVar(&downloadOpts.include, "include", nil, "Glob patterns to include from files to download. eg: *.json")
 	downloadCmd.Flags().StringSliceVar(&downloadOpts.exclude, "exclude", nil, "Glob patterns to exclude from files to download")
 	downloadCmd.Flags().StringVar(&downloadOpts.cacheDir, "cache-dir", "", "Directory where to save files")
-	downloadCmd.Flags().StringVar(&downloadOpts.localDir, "local-dir", "", "If set, the downloaded file will be placed under this directory")
+	downloadCmd.Flags().StringVar(&downloadOpts.localDir, "local-dir", "", "If set, the downloaded file will be placed under this directory. Check out https://huggingface.co/docs/huggingface_hub/guides/download#download-files-to-a-local-folder for more details.")
 	downloadCmd.Flags().BoolVar(&downloadOpts.forceDownload, "force-download", false, "If True, the files will be downloaded even if they are already cached")
 	downloadCmd.Flags().BoolVar(&downloadOpts.dryRun, "dry-run", false, "If True, perform a dry run without actually downloading the file")
 	downloadCmd.Flags().StringVar(&downloadOpts.token, "token", "", "A User Access Token generated from https://huggingface.co/settings/tokens")
 	downloadCmd.Flags().BoolVarP(&downloadOpts.quiet, "quiet", "q", false, "If True, progress bars are disabled and only the path to the download files is printed")
-	downloadCmd.Flags().IntVar(&downloadOpts.maxWorkers, "max-workers", 8, "Maximum number of workers to use for downloading files")
+	downloadCmd.Flags().IntVar(&downloadOpts.maxWorkers, "max-workers", 8, "Maximum number of workers to use for downloading files. Default is 8.")
 	downloadCmd.Flags().StringVar(&downloadOpts.endpoint, "endpoint", "", "HuggingFace endpoint URL")
 }
 
@@ -83,8 +83,8 @@ Examples:
   # Download from a dataset
   hfc download --repo-type dataset squad README.md
 
-  # Download with include pattern
-  hfc download --include "*.json" gpt2
+  # Download entire repo with filters (requires explicit filenames for now)
+  hfc download gpt2 config.json tokenizer.json vocab.json
 
   # Download with authentication
   hfc download --token hf_xxx private/model config.json
@@ -96,7 +96,10 @@ Examples:
   hfc download --revision v1.0 gpt2 config.json
 
   # Dry run to see what would be downloaded
-  hfc download --dry-run gpt2 config.json`,
+  hfc download --dry-run gpt2 config.json
+
+  # Quiet mode - only print paths
+  hfc download --quiet gpt2 config.json`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runDownload,
 }
@@ -109,6 +112,13 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+// warn prints a warning message to stderr if not in quiet mode
+func warn(format string, args ...interface{}) {
+	if !downloadOpts.quiet {
+		fmt.Fprintf(os.Stderr, "Warning: "+format+"\n", args...)
+	}
+}
+
 func runDownload(cmd *cobra.Command, args []string) error {
 	repoID := args[0]
 	filenames := args[1:]
@@ -119,37 +129,25 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid repo-type: %s. Must be one of: model, dataset, space", downloadOpts.repoType)
 	}
 
-	// If no filenames specified but include patterns are provided, we need at least include patterns
-	if len(filenames) == 0 && len(downloadOpts.include) == 0 {
-		return fmt.Errorf("at least one filename or --include pattern is required")
+	// Match Python behavior: warn if patterns are ignored when filenames are set
+	if len(filenames) > 0 {
+		if len(downloadOpts.include) > 0 {
+			warn("Ignoring `--include` since filenames have been explicitly set.")
+		}
+		if len(downloadOpts.exclude) > 0 {
+			warn("Ignoring `--exclude` since filenames have been explicitly set.")
+		}
 	}
 
-	// If include patterns are provided, they act as filenames filter
-	if len(downloadOpts.include) > 0 && len(filenames) > 0 {
-		if !downloadOpts.quiet {
-			fmt.Fprintln(os.Stderr, "Warning: Ignoring --include since filenames have been explicitly set.")
-		}
-	}
-	if len(downloadOpts.exclude) > 0 && len(filenames) > 0 {
-		if !downloadOpts.quiet {
-			fmt.Fprintln(os.Stderr, "Warning: Ignoring --exclude since filenames have been explicitly set.")
-		}
+	// If no filenames specified, we need at least one filename for now
+	// (snapshot_download functionality not yet implemented)
+	if len(filenames) == 0 {
+		return fmt.Errorf("at least one filename is required. Downloading entire repos with --include/--exclude patterns is not yet supported")
 	}
 
 	ctx := context.Background()
 
-	// Filter filenames by include/exclude patterns if no explicit filenames provided
-	if len(filenames) == 0 && len(downloadOpts.include) > 0 {
-		// For now, when include patterns are provided without filenames,
-		// we'll treat them as the files to download
-		filenames = downloadOpts.include
-	}
-
-	// Apply exclude patterns
-	if len(downloadOpts.exclude) > 0 && len(filenames) > 0 {
-		filenames = filterByPatterns(filenames, downloadOpts.exclude)
-	}
-
+	// Download files
 	for _, filename := range filenames {
 		opts := hfc.DownloadOptions{
 			RepoID:        repoID,
@@ -164,12 +162,13 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		}
 
 		if downloadOpts.dryRun {
+			// Match Python dry-run output format
 			fmt.Printf("[dry-run] Would download %s from %s\n", filename, repoID)
 			continue
 		}
 
 		if !downloadOpts.quiet {
-			fmt.Printf("Downloading %s from %s...\n", filename, repoID)
+			fmt.Fprintf(os.Stderr, "Downloading %s from %s...\n", filename, repoID)
 		}
 
 		path, err := hfc.Download(ctx, opts)
@@ -177,6 +176,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to download %s: %w", filename, err)
 		}
 
+		// Print only the path (consistent with Python quiet behavior)
 		fmt.Println(path)
 	}
 
