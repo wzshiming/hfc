@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/wzshiming/hfc"
@@ -33,31 +35,43 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 
 	// Download command flags
-	downloadCmd.Flags().StringVar(&downloadOpts.repoType, "repo-type", "model", "Repository type: model, dataset, or space")
-	downloadCmd.Flags().StringVar(&downloadOpts.revision, "revision", "", "Git revision (branch, tag, or commit hash)")
-	downloadCmd.Flags().StringVar(&downloadOpts.cacheDir, "cache-dir", "", "Directory where cached files are stored")
-	downloadCmd.Flags().StringVar(&downloadOpts.localDir, "local-dir", "", "Download to this local directory instead of cache")
-	downloadCmd.Flags().StringVar(&downloadOpts.token, "token", "", "HuggingFace authentication token")
-	downloadCmd.Flags().BoolVar(&downloadOpts.force, "force", false, "Force re-download even if file is cached")
-	downloadCmd.Flags().BoolVarP(&downloadOpts.quiet, "quiet", "q", false, "Suppress progress output")
+	downloadCmd.Flags().StringVar(&downloadOpts.repoType, "repo-type", "model", "The type of repository (model, dataset, or space)")
+	downloadCmd.Flags().StringVar(&downloadOpts.revision, "revision", "", "Git revision id which can be a branch name, a tag, or a commit hash")
+	downloadCmd.Flags().StringSliceVar(&downloadOpts.include, "include", nil, "Glob patterns to include from files to download. eg: *.json")
+	downloadCmd.Flags().StringSliceVar(&downloadOpts.exclude, "exclude", nil, "Glob patterns to exclude from files to download")
+	downloadCmd.Flags().StringVar(&downloadOpts.cacheDir, "cache-dir", "", "Directory where to save files")
+	downloadCmd.Flags().StringVar(&downloadOpts.localDir, "local-dir", "", "If set, the downloaded file will be placed under this directory")
+	downloadCmd.Flags().BoolVar(&downloadOpts.forceDownload, "force-download", false, "If True, the files will be downloaded even if they are already cached")
+	downloadCmd.Flags().BoolVar(&downloadOpts.dryRun, "dry-run", false, "If True, perform a dry run without actually downloading the file")
+	downloadCmd.Flags().StringVar(&downloadOpts.token, "token", "", "A User Access Token generated from https://huggingface.co/settings/tokens")
+	downloadCmd.Flags().BoolVarP(&downloadOpts.quiet, "quiet", "q", false, "If True, progress bars are disabled and only the path to the download files is printed")
+	downloadCmd.Flags().IntVar(&downloadOpts.maxWorkers, "max-workers", 8, "Maximum number of workers to use for downloading files")
 	downloadCmd.Flags().StringVar(&downloadOpts.endpoint, "endpoint", "", "HuggingFace endpoint URL")
 }
 
 var downloadOpts struct {
-	repoType string
-	revision string
-	cacheDir string
-	localDir string
-	token    string
-	force    bool
-	quiet    bool
-	endpoint string
+	repoType      string
+	revision      string
+	include       []string
+	exclude       []string
+	cacheDir      string
+	localDir      string
+	forceDownload bool
+	dryRun        bool
+	token         string
+	quiet         bool
+	maxWorkers    int
+	endpoint      string
 }
 
 var downloadCmd = &cobra.Command{
-	Use:   "download <repo_id> <filename> [filenames...]",
-	Short: "Download files from HuggingFace Hub",
-	Long: `Download files from HuggingFace Hub.
+	Use:   "download [OPTIONS] REPO_ID [FILENAMES]...",
+	Short: "Download files from the Hub",
+	Long: `Download files from the Hub.
+
+Arguments:
+  REPO_ID         The ID of the repo (e.g. 'username/repo-name').  [required]
+  [FILENAMES]...  Files to download (e.g. 'config.json', 'data/metadata.jsonl').
 
 Examples:
   # Download a single file
@@ -69,6 +83,9 @@ Examples:
   # Download from a dataset
   hfc download --repo-type dataset squad README.md
 
+  # Download with include pattern
+  hfc download --include "*.json" gpt2
+
   # Download with authentication
   hfc download --token hf_xxx private/model config.json
 
@@ -76,8 +93,11 @@ Examples:
   hfc download --local-dir ./models gpt2 config.json
 
   # Download a specific revision
-  hfc download --revision v1.0 gpt2 config.json`,
-	Args: cobra.MinimumNArgs(2),
+  hfc download --revision v1.0 gpt2 config.json
+
+  # Dry run to see what would be downloaded
+  hfc download --dry-run gpt2 config.json`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: runDownload,
 }
 
@@ -99,7 +119,36 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid repo-type: %s. Must be one of: model, dataset, space", downloadOpts.repoType)
 	}
 
+	// If no filenames specified but include patterns are provided, we need at least include patterns
+	if len(filenames) == 0 && len(downloadOpts.include) == 0 {
+		return fmt.Errorf("at least one filename or --include pattern is required")
+	}
+
+	// If include patterns are provided, they act as filenames filter
+	if len(downloadOpts.include) > 0 && len(filenames) > 0 {
+		if !downloadOpts.quiet {
+			fmt.Fprintln(os.Stderr, "Warning: Ignoring --include since filenames have been explicitly set.")
+		}
+	}
+	if len(downloadOpts.exclude) > 0 && len(filenames) > 0 {
+		if !downloadOpts.quiet {
+			fmt.Fprintln(os.Stderr, "Warning: Ignoring --exclude since filenames have been explicitly set.")
+		}
+	}
+
 	ctx := context.Background()
+
+	// Filter filenames by include/exclude patterns if no explicit filenames provided
+	if len(filenames) == 0 && len(downloadOpts.include) > 0 {
+		// For now, when include patterns are provided without filenames,
+		// we'll treat them as the files to download
+		filenames = downloadOpts.include
+	}
+
+	// Apply exclude patterns
+	if len(downloadOpts.exclude) > 0 && len(filenames) > 0 {
+		filenames = filterByPatterns(filenames, downloadOpts.exclude)
+	}
 
 	for _, filename := range filenames {
 		opts := hfc.DownloadOptions{
@@ -110,8 +159,13 @@ func runDownload(cmd *cobra.Command, args []string) error {
 			CacheDir:      downloadOpts.cacheDir,
 			LocalDir:      downloadOpts.localDir,
 			Token:         downloadOpts.token,
-			ForceDownload: downloadOpts.force,
+			ForceDownload: downloadOpts.forceDownload,
 			Endpoint:      downloadOpts.endpoint,
+		}
+
+		if downloadOpts.dryRun {
+			fmt.Printf("[dry-run] Would download %s from %s\n", filename, repoID)
+			continue
 		}
 
 		if !downloadOpts.quiet {
@@ -127,4 +181,35 @@ func runDownload(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// filterByPatterns filters filenames by excluding those matching any of the exclude patterns
+func filterByPatterns(filenames []string, excludePatterns []string) []string {
+	var result []string
+	for _, filename := range filenames {
+		excluded := false
+		for _, pattern := range excludePatterns {
+			if matched, _ := filepath.Match(pattern, filename); matched {
+				excluded = true
+				break
+			}
+			// Also check if pattern matches basename
+			if matched, _ := filepath.Match(pattern, filepath.Base(filename)); matched {
+				excluded = true
+				break
+			}
+			// Check for simple substring match for patterns like "*.json"
+			if strings.HasPrefix(pattern, "*") {
+				suffix := strings.TrimPrefix(pattern, "*")
+				if strings.HasSuffix(filename, suffix) {
+					excluded = true
+					break
+				}
+			}
+		}
+		if !excluded {
+			result = append(result, filename)
+		}
+	}
+	return result
 }

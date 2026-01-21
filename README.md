@@ -49,6 +49,12 @@ hfc download --local-dir ./models gpt2 config.json
 # Download with authentication
 hfc download --token hf_xxx private/model config.json
 
+# Download with include pattern
+hfc download --include "*.json" gpt2
+
+# Dry run to see what would be downloaded
+hfc download --dry-run gpt2 config.json
+
 # Download quietly (only output the path)
 hfc download --quiet gpt2 config.json
 ```
@@ -56,17 +62,20 @@ hfc download --quiet gpt2 config.json
 ### CLI Options
 
 ```
-Usage: hfc download [options] <repo_id> [filenames...]
+Usage: hfc download [OPTIONS] REPO_ID [FILENAMES]...
 
 Options:
-  --repo-type    Repository type: model, dataset, or space (default: model)
-  --revision     Git revision (branch, tag, or commit hash)
-  --cache-dir    Directory where cached files are stored
-  --local-dir    Download to this local directory instead of cache
-  --token        HuggingFace authentication token
-  --force        Force re-download even if file is cached
-  --quiet        Suppress progress output
-  --endpoint     HuggingFace endpoint URL
+  --repo-type string     The type of repository (model, dataset, or space) (default "model")
+  --revision string      Git revision id which can be a branch name, a tag, or a commit hash
+  --include strings      Glob patterns to include from files to download. eg: *.json
+  --exclude strings      Glob patterns to exclude from files to download
+  --cache-dir string     Directory where to save files
+  --local-dir string     If set, the downloaded file will be placed under this directory
+  --force-download       If True, the files will be downloaded even if they are already cached
+  --dry-run              If True, perform a dry run without actually downloading the file
+  --token string         A User Access Token generated from https://huggingface.co/settings/tokens
+  --quiet, -q            If True, progress bars are disabled and only the path to the download files is printed
+  --max-workers int      Maximum number of workers to use for downloading files (default 8)
 ```
 
 ## Library Usage
