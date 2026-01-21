@@ -1,6 +1,6 @@
 # hfc - HuggingFace Cache for Go
 
-A Go library for downloading files from [HuggingFace Hub](https://huggingface.co/) with cache compatibility with the Python [`huggingface_hub`](https://github.com/huggingface/huggingface_hub) library.
+A Go library and CLI for downloading files from [HuggingFace Hub](https://huggingface.co/) with cache compatibility with the Python [`huggingface_hub`](https://github.com/huggingface/huggingface_hub) library.
 
 ## Features
 
@@ -10,14 +10,66 @@ A Go library for downloading files from [HuggingFace Hub](https://huggingface.co
 - Authentication via tokens
 - Offline mode support
 - Configurable via environment variables
+- Command-line interface (`hfc download`)
 
 ## Installation
+
+### Library
 
 ```bash
 go get github.com/wzshiming/hfc
 ```
 
-## Usage
+### CLI
+
+```bash
+go install github.com/wzshiming/hfc/cmd/hfc@latest
+```
+
+## CLI Usage
+
+### Download a file
+
+```bash
+# Download a single file from a model
+hfc download gpt2 config.json
+
+# Download multiple files
+hfc download gpt2 config.json tokenizer.json
+
+# Download from a dataset
+hfc download --repo-type dataset squad README.md
+
+# Download a specific revision
+hfc download --revision v1.0 gpt2 config.json
+
+# Download to a local directory
+hfc download --local-dir ./models gpt2 config.json
+
+# Download with authentication
+hfc download --token hf_xxx private/model config.json
+
+# Download quietly (only output the path)
+hfc download --quiet gpt2 config.json
+```
+
+### CLI Options
+
+```
+Usage: hfc download [options] <repo_id> [filenames...]
+
+Options:
+  --repo-type    Repository type: model, dataset, or space (default: model)
+  --revision     Git revision (branch, tag, or commit hash)
+  --cache-dir    Directory where cached files are stored
+  --local-dir    Download to this local directory instead of cache
+  --token        HuggingFace authentication token
+  --force        Force re-download even if file is cached
+  --quiet        Suppress progress output
+  --endpoint     HuggingFace endpoint URL
+```
+
+## Library Usage
 
 ### Basic Download
 
@@ -46,6 +98,8 @@ func main() {
     fmt.Printf("Downloaded to: %s\n", path)
 }
 ```
+
+### Library Options
 
 ### Download with Options
 
