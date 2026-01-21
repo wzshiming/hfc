@@ -318,3 +318,23 @@ func TestIsOfflineMode(t *testing.T) {
 		t.Error("IsOfflineMode() = false, want true")
 	}
 }
+
+func TestGetEndpointTrimsTrailingSlash(t *testing.T) {
+	// Save original env
+	origEndpoint := os.Getenv("HF_ENDPOINT")
+	defer func() {
+		os.Setenv("HF_ENDPOINT", origEndpoint)
+	}()
+
+	// Test with trailing slash
+	os.Setenv("HF_ENDPOINT", "https://huggingface.co/")
+	if got := GetEndpoint(); got != "https://huggingface.co" {
+		t.Errorf("GetEndpoint() = %q, want %q", got, "https://huggingface.co")
+	}
+
+	// Test without trailing slash
+	os.Setenv("HF_ENDPOINT", "https://huggingface.co")
+	if got := GetEndpoint(); got != "https://huggingface.co" {
+		t.Errorf("GetEndpoint() = %q, want %q", got, "https://huggingface.co")
+	}
+}

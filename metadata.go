@@ -170,5 +170,3 @@ type LocalEntryNotFoundError struct {
 func (e *LocalEntryNotFoundError) Error() string {
 	return fmt.Sprintf("local entry not found: %s", e.Path)
 }
-
-

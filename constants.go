@@ -132,9 +132,8 @@ func isTrueEnv(key string) bool {
 }
 
 func trimSuffix(s, suffix string) string {
-	for len(s) > 0 && len(suffix) > 0 && s[len(s)-1] == suffix[len(suffix)-1] {
-		s = s[:len(s)-1]
-		suffix = suffix[:len(suffix)-1]
+	if len(suffix) > 0 && len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix {
+		return s[:len(s)-len(suffix)]
 	}
 	return s
 }
