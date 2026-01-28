@@ -33,6 +33,7 @@ type Downloader struct {
 	maxWorkers           int
 	maxFileWorkers       int
 	chunkSize            int64
+	dl                   *dl.Downloader
 }
 
 type Option func(d *Downloader)
@@ -181,6 +182,16 @@ func NewDownloader(opts ...Option) (*Downloader, error) {
 	if d.repoType == "" {
 		d.repoType = repoTypeModel
 	}
+
+	d.dl = dl.NewDownloader(
+		dl.WithHTTPClient(d.httpClient),
+		dl.WithConcurrency(d.maxFileWorkers),
+		dl.WithChunkSize(d.chunkSize),
+		dl.WithProgressFunc(dl.ProgressFunc(d.progressFunc)),
+		dl.WithResumeFromOutput(true),
+		dl.WithForceTryRange(true),
+	)
+
 	return d, nil
 }
 
@@ -221,24 +232,15 @@ func (d *Downloader) downloadFile(ctx context.Context, filename string) (string,
 		return finalPath, nil
 	}
 
-	// Download if needed
-
-	dlf := dl.NewDownloader(
-		dl.WithHTTPClient(d.httpClient),
-		dl.WithConcurrency(d.maxFileWorkers),
-		dl.WithChunkSize(d.chunkSize),
-	)
-
-	var progressFunc func(downloaded, total int64)
-	if d.progressFunc != nil {
-		progressFunc = func(downloaded, total int64) {
-			d.progressFunc(filename, downloaded, total)
-		}
-	}
-
-	err = dlf.Download(ctx, blobPath, progressFunc, metadata.Location)
+	incomplete := blobPath + ".incomplete"
+	err = d.dl.Download(ctx, incomplete, metadata.Location)
 	if err != nil {
 		return "", fmt.Errorf("failed to download file: %w", err)
+	}
+
+	err = os.Rename(incomplete, blobPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to rename incomplete file: %w", err)
 	}
 
 	if err := d.createHardlink(blobPath, finalPath); err != nil {
