@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wzshiming/hfc/cmd/hfc/download"
+	"github.com/wzshiming/hfc/cmd/hfc/upload"
 )
 
 var rootCmd = &cobra.Command{
@@ -25,6 +26,7 @@ Environment variables:
 
 func init() {
 	rootCmd.AddCommand(download.Cmd)
+	rootCmd.AddCommand(upload.Cmd)
 }
 
 func main() {

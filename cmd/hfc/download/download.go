@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wzshiming/hfc"
+	"github.com/wzshiming/hfc/internal/util"
 )
 
 var (
@@ -133,7 +134,7 @@ func runDownload(cmd *cobra.Command, args []string) error {
 				lastTime = now
 
 				percent := float64(downloaded) / float64(total) * 100
-				fmt.Printf("Downloading: %.1f%% (%s / %s) - Speed: %s/s\t\r", percent, formatBytes(downloaded), formatBytes(total), formatBytes(int64(speed)))
+				fmt.Printf("Downloading: %.1f%% (%s / %s) - Speed: %s/s\t\r", percent, util.FormatBytes(downloaded), util.FormatBytes(total), util.FormatBytes(int64(speed)))
 			}
 		}()
 
@@ -167,24 +168,4 @@ func runDownload(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(path)
 	return nil
-}
-
-// formatBytes formats a byte count in a human-readable format.
-func formatBytes(bytes int64) string {
-	const (
-		KB = 1024
-		MB = 1024 * KB
-		GB = 1024 * MB
-	)
-
-	switch {
-	case bytes >= GB:
-		return fmt.Sprintf("%.2f GiB", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.2f MiB", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.2f KiB", float64(bytes)/float64(KB))
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
 }

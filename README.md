@@ -5,6 +5,7 @@ A command-line tool for downloading files from the [Hugging Face Hub](https://hu
 ## Features
 
 - Download models, datasets, and spaces from Hugging Face Hub
+- Upload files and folders to models, datasets, and spaces
 - Compatible cache layout with `huggingface_hub` Python library
 - Resume interrupted downloads
 - Support for include/exclude patterns
@@ -80,6 +81,51 @@ hfc download meta-llama/Llama-2-7b
 
 ```bash
 hfc download gpt2 config.json --quiet
+```
+
+### Upload a single file
+
+```bash
+hfc upload username/my-model ./README.md
+```
+
+### Upload a file to a custom path
+
+```bash
+hfc upload username/my-model ./README.md docs/README.md
+```
+
+### Upload a folder
+
+```bash
+hfc upload username/my-model ./dist
+```
+
+### Upload with patterns
+
+```bash
+# Upload only JSON and Markdown files from a folder
+hfc upload username/my-model ./dist assets --include="*.json" --include="*.md"
+
+# Exclude checkpoints
+hfc upload username/my-model ./dist --exclude="*.ckpt"
+```
+
+### Upload with authentication
+
+```bash
+# Using command line token
+hfc upload username/private-model ./weights --token=hf_***
+
+# Or set environment variable
+export HF_TOKEN=hf_***
+hfc upload username/private-model ./weights
+```
+
+### Quiet upload mode
+
+```bash
+hfc upload username/my-model ./dist --quiet
 ```
 
 ## Environment Variables

@@ -14,6 +14,7 @@ import (
 	"github.com/wzshiming/dl"
 	"github.com/wzshiming/xet/client"
 	"github.com/wzshiming/xet/hf"
+	"github.com/wzshiming/xet/progress"
 )
 
 // Downloader handles downloading files from the Hugging Face Hub.
@@ -212,22 +213,11 @@ func (d *Downloader) downloadWithXet(ctx context.Context, outputPath string, res
 		client.WithBaseURL(resolved.BaseURL),
 		client.WithToken(resolved.Token),
 		client.WithHTTPClient(d.httpClient),
+		client.WithProgressFunc(progress.ProgressFunc(d.progressFunc)),
 	)
 
-	// Create download session
-	session := xetClient.DownloadSession()
-	if d.progressFunc != nil {
-		session = session.WithProgress(func(p client.Progress) {
-			if p.BytesRead == p.TotalBytes {
-				d.progressFunc(outputPath, p.BytesRead, p.TotalBytes)
-			} else {
-				d.progressFunc(outputPath, max(p.BytesRead, p.TransferredBytes), p.TotalBytes)
-			}
-		})
-	}
-
 	// Download file from xet
-	reader, _, err := session.DownloadFile(ctx, resolved.Hash)
+	reader, _, err := xetClient.DownloadFile(ctx, resolved.Hash, nil)
 	if err != nil {
 		return fmt.Errorf("failed to download via xet: %w", err)
 	}

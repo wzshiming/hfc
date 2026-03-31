@@ -5,7 +5,7 @@ go 1.25
 require (
 	github.com/spf13/cobra v1.10.2
 	github.com/wzshiming/dl v0.0.0-20260128021818-398f6dc5c126
-	github.com/wzshiming/xet v0.0.0-20260331080740-92fad2ceb8ae
+	github.com/wzshiming/xet v0.0.0-20260408073238-9ef76f12c962
 )
 
 require (
