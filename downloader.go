@@ -3,6 +3,7 @@ package hfc
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"sync"
 
 	"github.com/wzshiming/dl"
+	"github.com/wzshiming/xet/client"
+	"github.com/wzshiming/xet/hf"
 )
 
 // Downloader handles downloading files from the Hugging Face Hub.
@@ -195,6 +198,54 @@ func NewDownloader(opts ...Option) (*Downloader, error) {
 	return d, nil
 }
 
+// downloadWithXet attempts to download a file using xet protocol.
+// Returns an error if xet download fails.
+func (d *Downloader) downloadWithXet(ctx context.Context, outputPath string, resolved *hf.DownloadResolved) error {
+	// Create output directory if it doesn't exist
+	outputDir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Create xet client with resolved parameters
+	xetClient := client.NewClient(
+		client.WithBaseURL(resolved.BaseURL),
+		client.WithToken(resolved.Token),
+		client.WithHTTPClient(d.httpClient),
+	)
+
+	// Create download session
+	session := xetClient.DownloadSession()
+	if d.progressFunc != nil {
+		session = session.WithProgress(func(p client.Progress) {
+			if p.BytesRead == p.TotalBytes {
+				d.progressFunc(outputPath, p.BytesRead, p.TotalBytes)
+			} else {
+				d.progressFunc(outputPath, max(p.BytesRead, p.TransferredBytes), p.TotalBytes)
+			}
+		})
+	}
+
+	// Download file from xet
+	reader, _, err := session.DownloadFile(ctx, resolved.Hash)
+	if err != nil {
+		return fmt.Errorf("failed to download via xet: %w", err)
+	}
+
+	// Write downloaded content to file
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(file, reader); err != nil {
+		return fmt.Errorf("failed to write downloaded file: %w", err)
+	}
+
+	return nil
+}
+
 // downloadFile downloads a single file from the Hub.
 func (d *Downloader) downloadFile(ctx context.Context, filename string) (string, error) {
 	// Get file metadata
@@ -233,6 +284,28 @@ func (d *Downloader) downloadFile(ctx context.Context, filename string) (string,
 	}
 
 	incomplete := blobPath + ".incomplete"
+
+	// Try xet download first if supported
+	if metadata.Xet != nil {
+		err = d.downloadWithXet(ctx, incomplete, metadata.Xet)
+		if err == nil {
+			// Xet download succeeded, proceed with rename
+			err = os.Rename(incomplete, blobPath)
+			if err != nil {
+				return "", fmt.Errorf("failed to rename incomplete file: %w", err)
+			}
+
+			if err := d.createHardlink(blobPath, finalPath); err != nil {
+				return "", fmt.Errorf("failed to create hardlink: %w", err)
+			}
+
+			return finalPath, nil
+		}
+		// Xet download failed, log warning and proceed to fallback
+		fmt.Fprintf(os.Stderr, "Warning: xet download failed, falling back to standard download: %v\n", err)
+	}
+
+	// Fallback to standard download
 	err = d.dl.Download(ctx, incomplete, metadata.Location)
 	if err != nil {
 		return "", fmt.Errorf("failed to download file: %w", err)

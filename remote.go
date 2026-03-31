@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/wzshiming/xet/hf"
 )
 
 // fileMetadata represents metadata about a file on the Hub.
@@ -16,6 +18,7 @@ type fileMetadata struct {
 	Etag       string
 	Location   string
 	Size       int64
+	Xet        *hf.DownloadResolved
 }
 
 // repoFile represents a file in a repository.
@@ -147,6 +150,9 @@ func (d *Downloader) getFileMetadata(ctx context.Context, repoType, repoID, revi
 	} else if size := resp.ContentLength; size > 0 {
 		metadata.Size = size
 	}
+
+	dr, err := hf.ResolveResponse(ctx, nil, resp)
+	metadata.Xet = dr
 
 	return metadata, nil
 }
