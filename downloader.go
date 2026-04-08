@@ -278,21 +278,20 @@ func (d *Downloader) downloadFile(ctx context.Context, filename string) (string,
 	// Try xet download first if supported
 	if metadata.Xet != nil {
 		err = d.downloadWithXet(ctx, incomplete, metadata.Xet)
-		if err == nil {
-			// Xet download succeeded, proceed with rename
-			err = os.Rename(incomplete, blobPath)
-			if err != nil {
-				return "", fmt.Errorf("failed to rename incomplete file: %w", err)
-			}
-
-			if err := d.createHardlink(blobPath, finalPath); err != nil {
-				return "", fmt.Errorf("failed to create hardlink: %w", err)
-			}
-
-			return finalPath, nil
+		if err != nil {
+			return "", fmt.Errorf("xet download failed: %w", err)
 		}
-		// Xet download failed, log warning and proceed to fallback
-		fmt.Fprintf(os.Stderr, "Warning: xet download failed, falling back to standard download: %v\n", err)
+		// Xet download succeeded, proceed with rename
+		err = os.Rename(incomplete, blobPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to rename incomplete file: %w", err)
+		}
+
+		if err := d.createHardlink(blobPath, finalPath); err != nil {
+			return "", fmt.Errorf("failed to create hardlink: %w", err)
+		}
+
+		return finalPath, nil
 	}
 
 	// Fallback to standard download
