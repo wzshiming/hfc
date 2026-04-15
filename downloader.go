@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/wzshiming/dl"
+	"github.com/wzshiming/xet"
 	"github.com/wzshiming/xet/client"
 	"github.com/wzshiming/xet/hf"
 	"github.com/wzshiming/xet/progress"
@@ -201,7 +202,7 @@ func NewDownloader(opts ...Option) (*Downloader, error) {
 
 // downloadWithXet attempts to download a file using xet protocol.
 // Returns an error if xet download fails.
-func (d *Downloader) downloadWithXet(ctx context.Context, outputPath string, resolved *hf.DownloadResolved) error {
+func (d *Downloader) downloadWithXet(ctx context.Context, outputPath string, hash xet.Hash, token *hf.Token) error {
 	// Create output directory if it doesn't exist
 	outputDir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -210,14 +211,14 @@ func (d *Downloader) downloadWithXet(ctx context.Context, outputPath string, res
 
 	// Create xet client with resolved parameters
 	xetClient := client.NewClient(
-		client.WithBaseURL(resolved.BaseURL),
-		client.WithToken(resolved.Token),
+		client.WithBaseURL(token.BaseURL),
+		client.WithToken(token.Token),
 		client.WithHTTPClient(d.httpClient),
 		client.WithProgressFunc(progress.ProgressFunc(d.progressFunc)),
 	)
 
 	// Download file from xet
-	reader, _, err := xetClient.DownloadFile(ctx, resolved.Hash, nil)
+	reader, _, err := xetClient.DownloadFile(ctx, hash, nil)
 	if err != nil {
 		return fmt.Errorf("failed to download via xet: %w", err)
 	}
@@ -276,8 +277,8 @@ func (d *Downloader) downloadFile(ctx context.Context, filename string) (string,
 	incomplete := blobPath + ".incomplete"
 
 	// Try xet download first if supported
-	if metadata.Xet != nil {
-		err = d.downloadWithXet(ctx, incomplete, metadata.Xet)
+	if metadata.XetToken != nil {
+		err = d.downloadWithXet(ctx, incomplete, metadata.XetHash, metadata.XetToken)
 		if err != nil {
 			return "", fmt.Errorf("xet download failed: %w", err)
 		}
