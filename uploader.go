@@ -130,11 +130,6 @@ type lfsAction struct {
 	Header map[string]string `json:"header"`
 }
 
-type multipartCompletion struct {
-	OID   string                    `json:"oid"`
-	Parts []multipartCompletionPart `json:"parts"`
-}
-
 type multipartCompletionPart struct {
 	PartNumber int    `json:"partNumber"`
 	ETag       string `json:"etag"`
