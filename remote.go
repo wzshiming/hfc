@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/wzshiming/xet"
+	"github.com/wzshiming/xet/client"
 	"github.com/wzshiming/xet/hf"
 )
 
@@ -19,7 +20,7 @@ type fileMetadata struct {
 	Etag       string
 	Location   string
 	Size       int64
-	XetToken   *hf.Token
+	XetAuth    client.AuthProvider
 	XetHash    xet.Hash
 }
 
@@ -153,9 +154,9 @@ func (d *Downloader) getFileMetadata(ctx context.Context, repoType, repoID, revi
 		metadata.Size = size
 	}
 
-	hash, token, err := hf.ResolveResponse(ctx, nil, resp)
+	hash, auth, err := hf.ResolveResponse(ctx, nil, resp)
 	metadata.XetHash = hash
-	metadata.XetToken = token
+	metadata.XetAuth = auth
 
 	return metadata, nil
 }
