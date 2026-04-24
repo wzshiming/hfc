@@ -747,10 +747,13 @@ func (u *Uploader) uploadXetFiles(ctx context.Context, files []*uploadFile) erro
 				client.WithConcurrency(u.maxWorkers),
 			}
 
-			cli := client.NewClient(opts...)
+			cli, err := client.NewClient(opts...)
+			if err != nil {
+				errs <- fmt.Errorf("failed to create xet client for %s: %w", f.pathInRepo, err)
+				return
+			}
 
 			_, err = cli.UploadFile(ctx, file)
-
 			if err != nil {
 				errs <- fmt.Errorf("xet upload %s: %w", f.pathInRepo, err)
 				return

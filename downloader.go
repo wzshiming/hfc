@@ -192,7 +192,7 @@ func NewDownloader(opts ...Option) (*Downloader, error) {
 		dl.WithConcurrency(d.maxFileWorkers),
 		dl.WithChunkSize(d.chunkSize),
 		dl.WithProgressFunc(dl.ProgressFunc(d.progressFunc)),
-		dl.WithResumeFromOutput(true),
+		dl.WithResume(true),
 		dl.WithForceTryRange(true),
 	)
 
@@ -201,35 +201,22 @@ func NewDownloader(opts ...Option) (*Downloader, error) {
 
 // downloadWithXet attempts to download a file using xet protocol.
 // Returns an error if xet download fails.
-func (d *Downloader) downloadWithXet(ctx context.Context, outputPath string, hash xet.Hash, auth client.AuthProvider) error {
-	// Create output directory if it doesn't exist
-	outputDir := filepath.Dir(outputPath)
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
-	}
+func (d *Downloader) downloadWithXet(ctx context.Context, w io.WriteSeeker, hash xet.Hash, auth client.AuthProvider) error {
 
 	// Create xet client with resolved parameters
-	xetClient := client.NewClient(
+	xetClient, err := client.NewClient(
 		client.WithAuthProvider(auth),
 		client.WithHTTPClient(d.httpClient),
 		client.WithProgressFunc(progress.ProgressFunc(d.progressFunc)),
 	)
+	if err != nil {
+		return fmt.Errorf("failed to create xet client: %w", err)
+	}
 
 	// Download file from xet
-	reader, _, err := xetClient.DownloadFile(ctx, hash, nil)
+	err = xetClient.DownloadFile(ctx, hash, w)
 	if err != nil {
 		return fmt.Errorf("failed to download via xet: %w", err)
-	}
-
-	// Write downloaded content to file
-	file, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer file.Close()
-
-	if _, err := io.Copy(file, reader); err != nil {
-		return fmt.Errorf("failed to write downloaded file: %w", err)
 	}
 
 	return nil
@@ -274,9 +261,21 @@ func (d *Downloader) downloadFile(ctx context.Context, filename string) (string,
 
 	incomplete := blobPath + ".incomplete"
 
+	// Create output directory if it doesn't exist
+	outputDir := filepath.Dir(incomplete)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	f, err := os.OpenFile(incomplete, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return "", fmt.Errorf("failed to create incomplete file: %w", err)
+	}
+	defer f.Close()
+
 	// Try xet download first if supported
 	if metadata.XetAuth != nil {
-		err = d.downloadWithXet(ctx, incomplete, metadata.XetHash, metadata.XetAuth)
+		err = d.downloadWithXet(ctx, f, metadata.XetHash, metadata.XetAuth)
 		if err != nil {
 			return "", fmt.Errorf("xet download failed: %w", err)
 		}
@@ -293,8 +292,7 @@ func (d *Downloader) downloadFile(ctx context.Context, filename string) (string,
 		return finalPath, nil
 	}
 
-	// Fallback to standard download
-	err = d.dl.Download(ctx, incomplete, metadata.Location)
+	err = d.dl.Download(ctx, filename, f, metadata.Location)
 	if err != nil {
 		return "", fmt.Errorf("failed to download file: %w", err)
 	}
